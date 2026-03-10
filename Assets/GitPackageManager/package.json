@@ -1,0 +1,12 @@
+{
+  "name": "com.lwalle.tools.git-package-manager",
+  "version": "0.1.3",
+  "displayName": "Git Package Manager",
+  "description": "Manages packages in github repository",
+  "unity": "2019.4",
+  "unityRelease": "0b5",
+  "keywords": [
+    "git",
+    "package"
+  ]
+}
