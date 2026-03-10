@@ -53,7 +53,10 @@ namespace Lwalle.GitPackageManager
             public List<string> versions = new List<string>();
 
             public int selectedVersionIndex = 0;
-
+            public CachedPackageInfo Clone()
+            {
+                return (CachedPackageInfo)this.MemberwiseClone();
+            }
 // Dependencies per version
             public List<DependencyVersion> versionGitHubDependencies = new List<DependencyVersion>();
             public List<DependencyVersion> versionReverseDependencies = new List<DependencyVersion>();

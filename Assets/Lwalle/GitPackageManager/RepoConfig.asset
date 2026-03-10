@@ -16,6 +16,9 @@ MonoBehaviour:
   - repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
     defaultBranch: main
     isPrivate: 0
+  - repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
+    defaultBranch: main
+    isPrivate: 1
   cachedRepoGroups:
   - repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
     repoName: GitPackageManagerUnity
@@ -55,3 +58,104 @@ MonoBehaviour:
           value: 0.1.0
       versionReverseDependencies:
       - versions: []
+  - repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
+    repoName: UnityUtils
+    isExpanded: 0
+    packages:
+    - name: com.lwalle.command-editor
+      displayName: Command (Editor)
+      description: Provide command menu in Editor
+      repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
+      subPath: Assets/Utils/CommandEditor
+      branch: main
+      versions:
+      - 0.1.0
+      selectedVersionIndex: 0
+      versionGitHubDependencies:
+      - versions: []
+      versionReverseDependencies:
+      - versions: []
+    - name: com.lwalle.git-symbol-script-define
+      displayName: Git Symbol Script Define
+      description: Automatically add/remove Script Define Symbols based on current
+        git branch suffix
+      repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
+      subPath: Assets/Utils/GitSymbolScriptDefine.Utils
+      branch: main
+      versions:
+      - 0.1.0
+      selectedVersionIndex: 0
+      versionGitHubDependencies:
+      - versions:
+        - key: com.lwalle.logging.core
+          value: 0.1.0
+        - key: com.lwalle.unity-editor.utils
+          value: 0.1.7
+      versionReverseDependencies:
+      - versions: []
+    - name: com.lwalle.logging.core
+      displayName: Logging (Core)
+      description: Debug and profiler tools
+      repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
+      subPath: Assets/Utils/Logger.Core
+      branch: main
+      versions:
+      - 0.1.0
+      selectedVersionIndex: 0
+      versionGitHubDependencies:
+      - versions:
+        - key: com.lwalle.utility.common
+          value: 0.1.0
+      versionReverseDependencies:
+      - versions:
+        - key: com.lwalle.git-symbol-script-define
+          value: 0.1.0
+    - name: com.lwalle.operation-result
+      displayName: Operation Result
+      description: Provide operation result pattern
+      repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
+      subPath: Assets/Utils/OperationResult
+      branch: main
+      versions:
+      - 0.1.0
+      selectedVersionIndex: 0
+      versionGitHubDependencies:
+      - versions: []
+      versionReverseDependencies:
+      - versions: []
+    - name: com.lwalle.unity-editor.utils
+      displayName: Unity Editor (Utils)
+      description: Provide Unity editor helper
+      repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
+      subPath: Assets/Utils/UnityEditor.Utils
+      branch: main
+      versions:
+      - 0.1.7
+      - 0.1.6
+      - 0.1.5
+      selectedVersionIndex: 0
+      versionGitHubDependencies:
+      - versions: []
+      - versions: []
+      - versions: []
+      versionReverseDependencies:
+      - versions:
+        - key: com.lwalle.git-symbol-script-define
+          value: 0.1.0
+      - versions: []
+      - versions: []
+    - name: com.lwalle.utility.common
+      displayName: Utility (Common)
+      description: Provides common utilities
+      repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
+      subPath: Assets/Utils/Utility
+      branch: main
+      versions:
+      - 0.1.0
+      selectedVersionIndex: 0
+      versionGitHubDependencies:
+      - versions: []
+      versionReverseDependencies:
+      - versions:
+        - key: com.lwalle.logging.core
+          value: 0.1.0

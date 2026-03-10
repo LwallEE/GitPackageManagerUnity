@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -64,6 +65,29 @@ namespace Lwalle.GitPackageManager
         }
     }
 
+    [InitializeOnLoad]
+    public static class GitPackageManagerRestarter
+    {
+        static GitPackageManagerRestarter()
+        {
+            // This method will be called after a domain reload (e.g., after a package install).
+            EditorApplication.delayCall += CheckForInterruptedInstallation;
+        }
+
+        private static void CheckForInterruptedInstallation()
+        {
+            // If our flag indicates an installation was running before the reload,
+            // we ensure the window is open so it can resume itself.
+            if (SessionState.GetBool(CustomPackageScanner.SESSION_INSTALL_RUNNING, false))
+            {
+                Debug.LogWarning("[GitPackageManager] Interrupted installation detected. Re-opening window to resume...");
+                // Get or open the window. Its OnEnable method will handle the resume logic.
+                EditorWindow.GetWindow<CustomPackageScanner>("Custom Package Scanner");
+            }
+        }
+    }
+
+
     public class CustomPackageScanner : EditorWindow
     {
         private string searchQuery = "";
@@ -78,6 +102,45 @@ namespace Lwalle.GitPackageManager
 
         // Session-only token storage using SessionState (survives recompile, lost when Unity closes)
         private const string SESSION_TOKEN_PREFIX = "GitPkgMgr_Token_";
+        
+        // Session state keys to make the installation process survive domain reloads
+        public const string SESSION_INSTALL_RUNNING = "GitPkg_Install_Running";
+        public const string SESSION_INSTALL_QUEUE = "GitPkg_Install_Queue";
+
+        #region Editor Coroutine Runner
+        // We integrate the coroutine logic directly here to simplify the class structure.
+        // These need to be static to survive domain reloads, but their state is managed by the update loop.
+        private static readonly List<IEnumerator> editorRoutines = new List<IEnumerator>();
+        private static bool isCoroutineRunning = false;
+
+        private static void StartEditorCoroutine(IEnumerator routine)
+        {
+            editorRoutines.Add(routine);
+            if (!isCoroutineRunning)
+            {
+                isCoroutineRunning = true;
+                EditorApplication.update += UpdateEditorCoroutines;
+            }
+        }
+
+        private static void UpdateEditorCoroutines()
+        {
+            // Iterate backwards to allow removal.
+            for (int i = editorRoutines.Count - 1; i >= 0; i--)
+            {
+                if (!editorRoutines[i].MoveNext())
+                {
+                    editorRoutines.RemoveAt(i);
+                }
+            }
+
+            if (editorRoutines.Count == 0)
+            {
+                EditorApplication.update -= UpdateEditorCoroutines;
+                isCoroutineRunning = false;
+            }
+        }
+        #endregion
 
         private static string GetSessionToken(string repoUrl)
         {
@@ -115,6 +178,31 @@ namespace Lwalle.GitPackageManager
         {
             config = Helper.LoadOrCreateSOAtPath<RepoConfigSO>(Constant.REPO_CONFIG_PATH);
             RefreshInstalledPackages();
+            // Use delayCall to ensure the editor is fully initialized before we try to resume.
+            EditorApplication.delayCall += TryResumeInstallation;
+        }
+        
+        private void TryResumeInstallation()
+        {
+            if (SessionState.GetBool(SESSION_INSTALL_RUNNING, false))
+            {
+                string queueJson = SessionState.GetString(SESSION_INSTALL_QUEUE, "");
+                if (!string.IsNullOrEmpty(queueJson))
+                {
+                    var wrapper = JsonUtility.FromJson<PackageListWrapper>(queueJson);
+                    if (wrapper != null && wrapper.packages != null && wrapper.packages.Count > 0)
+                    {
+                        Debug.Log("[GitPackageManager] Resuming interrupted installation chain...");
+                        StartEditorCoroutine(InstallChainCoroutine(wrapper.packages));
+                    }
+                    else
+                    {
+                        // Invalid state, clear it
+                        SessionState.SetBool(SESSION_INSTALL_RUNNING, false);
+                        SessionState.EraseString(SESSION_INSTALL_QUEUE);
+                    }
+                }
+            }
         }
 
         private void OnGUI()
@@ -627,44 +715,150 @@ namespace Lwalle.GitPackageManager
             );
         }
 
-        private void ExecuteInstall(RepoConfigSO.CachedPackageInfo mainPkg)
+        /// <summary>
+        /// Recursively builds a flat list of packages to install, in the correct order (dependencies first).
+        /// This is a post-order traversal of the dependency graph.
+        /// </summary>
+        private void GetInstallationListRecursive(
+            RepoConfigSO.CachedPackageInfo package,
+            Dictionary<string, RepoConfigSO.CachedPackageInfo> allKnownPackages,
+            List<RepoConfigSO.CachedPackageInfo> installList,
+            HashSet<string> processedPackagesInPath)
         {
-            int selectedIdx = mainPkg.selectedVersionIndex;
-            var deps = mainPkg.versionGitHubDependencies[selectedIdx];
-            List<RepoConfigSO.CachedPackageInfo> depsToInstall = new List<RepoConfigSO.CachedPackageInfo>();
-            foreach (var pair in deps.versions)
+            // If this package has already been fully resolved and added to the final list, we can skip it.
+            if (installList.Any(p => p.name == package.name))
             {
-                var depPkg = config.cachedRepoGroups.SelectMany(g => g.packages)
-                    .FirstOrDefault(p => p.name == pair.key);
-                if (depPkg == null) continue;
-                var installed = listRequest?.Result?.FirstOrDefault(p => p.name == pair.key);
-                if (installed != null && installed.version == pair.value) continue;
-                int index = depPkg.versions.IndexOf(pair.value);
-                if (index == -1)
-                {
-                    Debug.LogWarning(
-                        $"Version {pair.value} not found for dependency {pair.key}, using default version.");
-                    index = 0;
-                }
-
-                depPkg.selectedVersionIndex = index;
-                depsToInstall.Add(depPkg);
+                return;
             }
 
-            InstallChain(depsToInstall, 0, mainPkg);
+            // Use this set to detect circular dependencies within a single traversal path.
+            if (processedPackagesInPath.Contains(package.name))
+            {
+                Debug.LogError($"Circular dependency detected involving package '{package.name}'. Aborting installation of this path.");
+                return;
+            }
+            processedPackagesInPath.Add(package.name);
+
+            // Get direct dependencies for the selected version
+            int selectedIdx = package.selectedVersionIndex;
+            if (selectedIdx < 0 || selectedIdx >= package.versionGitHubDependencies.Count)
+            {
+                Debug.LogWarning($"Package '{package.name}' has an invalid version index. Cannot resolve its dependencies.");
+                processedPackagesInPath.Remove(package.name); // Clean up before returning
+                return;
+            }
+            var directDeps = package.versionGitHubDependencies[selectedIdx];
+
+            // Recursively process each dependency first
+            foreach (var pair in directDeps.versions)
+            {
+                string depName = pair.key;
+                string depVersion = pair.value;
+
+                if (allKnownPackages.TryGetValue(depName, out var depPkg))
+                {
+                    // Clone the dependency package info to avoid side-effects between different dependency branches.
+                    var depPkgClone = depPkg.Clone();
+
+                    // Find and set the correct version index for the dependency
+                    int depVersionIndex = depPkgClone.versions.IndexOf(depVersion);
+                    if (depVersionIndex == -1)
+                    {
+                        Debug.LogWarning($"Required version '{depVersion}' for dependency '{depName}' not found. It will be skipped.");
+                        continue;
+                    }
+                    depPkgClone.selectedVersionIndex = depVersionIndex;
+
+                    // Recursive call for the dependency
+                    GetInstallationListRecursive(depPkgClone, allKnownPackages, installList, processedPackagesInPath);
+                }
+                else
+                {
+                    Debug.LogWarning($"Dependency '{depName}' is not a known package in any scanned repository. It will be skipped.");
+                }
+            }
+
+            // After all dependencies of 'package' are in the list, add 'package' itself.
+            installList.Add(package.Clone());
+
+            // Remove from the path-tracking set, so other branches of the dependency tree can process this node if needed.
+            processedPackagesInPath.Remove(package.name);
         }
 
-        private void InstallChain(List<RepoConfigSO.CachedPackageInfo> deps, int index,
-            RepoConfigSO.CachedPackageInfo mainPkg)
+        private void ExecuteInstall(RepoConfigSO.CachedPackageInfo mainPkg)
         {
-            if (index < deps.Count)
+            // Clone the main package to avoid modifying the original SO data during resolution.
+            var mainPkgClone = mainPkg.Clone();
+
+            // Build a flat list of all packages to install, in the correct dependency order.
+            var allKnownPackages = config.cachedRepoGroups
+                .SelectMany(g => g.packages)
+                .ToDictionary(p => p.name, p => p);
+
+            var installList = new List<RepoConfigSO.CachedPackageInfo>();
+            var processedPackagesInPath = new HashSet<string>();
+
+            GetInstallationListRecursive(mainPkgClone, allKnownPackages, installList, processedPackagesInPath);
+
+            // DEBUG: In ra thứ tự cài đặt
+            var installOrderLog = installList.Select(p => $"{p.name}@{p.versions[p.selectedVersionIndex]}").ToList();
+            Debug.Log($"[GitPackageManager] Installation order determined ({installOrderLog.Count} packages):\n" +
+                      string.Join("\n", installOrderLog.Select((pkg, i) => $"{i + 1}. {pkg}")));
+
+            // Save state to SessionState before starting the coroutine
+            var wrapper = new PackageListWrapper { packages = installList };
+            SessionState.SetString(SESSION_INSTALL_QUEUE, JsonUtility.ToJson(wrapper));
+            SessionState.SetBool(SESSION_INSTALL_RUNNING, true);
+
+            // Start the installation chain with the generated list.
+            StartEditorCoroutine(InstallChainCoroutine(installList));
+        }
+
+        private IEnumerator InstallChainCoroutine(List<RepoConfigSO.CachedPackageInfo> packagesToInstall)
+        {
+            int totalPackages = packagesToInstall.Count;
+            int currentPackageIndex = 0;
+            foreach (var pkg in packagesToInstall)
             {
-                InstallSinglePackage(deps[index], () => InstallChain(deps, index + 1, mainPkg));
+                currentPackageIndex++;
+                Debug.Log($"[GitPackageManager] Chain state: Installing package {currentPackageIndex}/{totalPackages} ('{pkg.name}').");
+                // Skip if already installed with the correct version
+                if (installedPackageVersions.TryGetValue(pkg.name, out string installedVersion) &&
+                    installedVersion == pkg.versions[pkg.selectedVersionIndex])
+                {
+                    Debug.Log($"✓ Already installed: {pkg.name} @ {installedVersion}");
+                    continue;
+                }
+
+                AddRequest request = InstallSinglePackage(pkg);
+
+                // Wait until the request is completed
+                while (!request.IsCompleted)
+                {
+                    yield return null;
+                }
+
+                if (request.Status == StatusCode.Success)
+                {
+                    Debug.Log($"✓ Installed: {request.Result.displayName} @ {request.Result.version}");
+                    // Manually update our dictionary so the next check in the loop is aware
+                    installedPackageVersions[request.Result.name] = request.Result.version;
+                }
+                else
+                {
+                    Debug.LogError($"✗ Failed to install {pkg.name}: {request.Error.message}");
+                    // Optional: decide if we should stop the whole chain on failure
+                    // For now, we continue
+                }
             }
-            else
-            {
-                InstallSinglePackage(mainPkg);
-            }
+
+            Debug.Log("[GitPackageManager] All installations complete. Refreshing package list for UI.");
+            
+            // Clear the session state flag on successful completion
+            SessionState.SetBool(SESSION_INSTALL_RUNNING, false);
+            SessionState.EraseString(SESSION_INSTALL_QUEUE);
+            
+            RefreshInstalledPackages();
         }
 
         /// <summary>
@@ -716,7 +910,7 @@ namespace Lwalle.GitPackageManager
             }
         }
 
-        private void InstallSinglePackage(RepoConfigSO.CachedPackageInfo pkg, Action onComplete = null)
+        private AddRequest InstallSinglePackage(RepoConfigSO.CachedPackageInfo pkg)
         {
             string versionOrBranch = pkg.versions[pkg.selectedVersionIndex];
             string specifier = versionOrBranch.Contains("latest")
@@ -724,45 +918,24 @@ namespace Lwalle.GitPackageManager
                 : $"publish/{pkg.name}={versionOrBranch}";
             string cleanSubPath = pkg.subPath.Trim('/');
             string repoUrlWithGit = pkg.repoUrl.EndsWith(".git") ? pkg.repoUrl : pkg.repoUrl + ".git";
-
+        
             // For private repos: store token in credential manager, use oauth2@ in URL
             string token = GetTokenForRepo(pkg.repoUrl);
             if (!string.IsNullOrEmpty(token) && repoUrlWithGit.StartsWith("https://"))
             {
                 // Strip existing username if present (e.g. https://User@github.com -> https://github.com)
                 string cleanRepoUrl = System.Text.RegularExpressions.Regex.Replace(
-                    repoUrlWithGit, @"^https://[^@]+@", "https://");
+                    repoUrlWithGit, @"^https://[^@]+@", "https://"); 
                 var uri = new Uri(cleanRepoUrl);
                 StoreGitCredential(uri.Host, token);
-
+        
                 // URL with oauth2@ username - git will match this to the stored credential
                 repoUrlWithGit = $"https://{GIT_CREDENTIAL_USERNAME}@{uri.Host}{uri.AbsolutePath}";
             }
-
+        
             string gitUrl = $"{repoUrlWithGit}?path=/{cleanSubPath}#{specifier}";
             Debug.Log($"Installing: {pkg.name} @ {versionOrBranch}");
-            AddRequest request = Client.Add(gitUrl);
-
-            void WaitForRequest()
-            {
-                if (request.IsCompleted)
-                {
-                    EditorApplication.update -= WaitForRequest;
-                    if (request.Status == StatusCode.Success)
-                    {
-                        Debug.Log($"✓ Installed: {pkg.name} @ {versionOrBranch}");
-                        RefreshInstalledPackages();
-                        onComplete?.Invoke();
-                    }
-                    else
-                    {
-                        Debug.LogError($"✗ Failed: {pkg.name} - {request.Error.message}");
-                        onComplete?.Invoke();
-                    }
-                }
-            }
-
-            EditorApplication.update += WaitForRequest;
+            return Client.Add(gitUrl);
         }
 
         private void RemovePackage(string packageName)
@@ -1068,6 +1241,13 @@ namespace Lwalle.GitPackageManager
         private class WrappedTagResponse
         {
             public TagResponse[] tags;
+        }
+
+        // Wrapper class to allow JsonUtility to serialize a List<T>
+        [System.Serializable]
+        private class PackageListWrapper
+        {
+            public List<RepoConfigSO.CachedPackageInfo> packages;
         }
     }
 }
