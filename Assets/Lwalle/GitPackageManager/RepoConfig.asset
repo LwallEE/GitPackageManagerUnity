@@ -16,9 +16,6 @@ MonoBehaviour:
   - repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
     defaultBranch: main
     isPrivate: 0
-  - repoUrl: https://LwallEE@github.com/hzu-packages/UnityUtils.git
-    defaultBranch: main
-    isPrivate: 1
   cachedRepoGroups:
   - repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
     repoName: GitPackageManagerUnity
