@@ -1,7 +1,7 @@
 {
     "name": "com.test.package-b",
     "version": "0.1.0",
-    "displayName": "Test Package A",
+    "displayName": "Test Package B",
     "description": "",
     "unity": "2019.4",
     "unityRelease": "0b5",

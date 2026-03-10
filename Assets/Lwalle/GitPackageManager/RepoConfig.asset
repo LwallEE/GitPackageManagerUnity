@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e844e8253d6644e1d94e498cfe0f2113, type: 3}
+  m_Name: RepoConfig
+  m_EditorClassIdentifier: 
+  repos:
+  - repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
+    defaultBranch: main
+    isPrivate: 0
+  cachedRepoGroups:
+  - repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
+    repoName: GitPackageManagerUnity
+    isExpanded: 1
+    packages:
+    - name: com.test.package-a
+      displayName: Test Package A
+      description: 
+      repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
+      subPath: Assets/_Samples/SampleGitPackage/PackageA
+      branch: main
+      versions:
+      - 0.1.0
+      selectedVersionIndex: 0
+      versionGitHubDependencies:
+      - versions:
+        - key: com.unity.addressables
+          value: 2.7.6
+      versionReverseDependencies:
+      - versions:
+        - key: com.test.package-b
+          value: 0.1.0
+    - name: com.test.package-b
+      displayName: Test Package A
+      description: 
+      repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
+      subPath: Assets/_Samples/SampleGitPackage/PackageB
+      branch: main
+      versions:
+      - 0.1.0
+      selectedVersionIndex: 0
+      versionGitHubDependencies:
+      - versions:
+        - key: com.unity.addressables
+          value: 2.7.6
+        - key: com.test.package-a
+          value: 0.1.0
+      versionReverseDependencies:
+      - versions: []
