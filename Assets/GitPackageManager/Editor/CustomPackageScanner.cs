@@ -261,7 +261,7 @@ namespace Lwalle.GitPackageManager
             rightScrollPos = GUILayout.BeginScrollView(rightScrollPos);
             if (selectedPackage == null)
             {
-                EditorGUILayout.HelpBox("Chọn một package để xem chi tiết", MessageType.Info);
+                EditorGUILayout.HelpBox("Choose a package for details", MessageType.Info);
             }
             else
             {

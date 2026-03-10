@@ -39,7 +39,7 @@ MonoBehaviour:
         - key: com.test.package-b
           value: 0.1.0
     - name: com.test.package-b
-      displayName: Test Package A
+      displayName: Test Package B
       description: 
       repoUrl: https://github.com/LwallEE/GitPackageManagerUnity.git
       subPath: Assets/_Samples/SampleGitPackage/PackageB
